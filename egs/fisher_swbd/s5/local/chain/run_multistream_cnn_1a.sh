@@ -6,6 +6,9 @@
 # Copyright 2020 ASAPP Kyu J. Han
 # MIT
 
+# This recipe is based on a paper titled "Multistream CNN for Robust Acoustic Modeling", 
+# https://arxiv.org/abs/2005.10470.
+
 # Copyright 2017 University of Chinese Academy of Sciences (UCAS) Gaofeng Cheng
 # Apache 2.0
 
