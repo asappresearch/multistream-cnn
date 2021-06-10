@@ -5,7 +5,7 @@ A multistream CNN is a novel neural network architecture for robust acoustic mod
 
 ![Alt text](asapp/multistream-cnn.png)
 
-### Reference
+### References
 Multistream CNN for Robust Acoustic Modeling [[paper](https://arxiv.org/pdf/2005.10470.pdf)]
 ```
 {
@@ -26,3 +26,28 @@ ASAPP-ASR: Multistream CNN and Self-Attentive SRU for SOTA Speech Recognition [[
     year={2020}
 }
 ```
+
+### Installation
+Please follow the original [Kaldi]((https://github.com/kaldi-asr/kaldi)) build sequence, as below.
+```
+>> cd tools; make; cd ../src; ./configure; make clean; make -j clean depend; make -j all
+```
+
+### Recipes and Results
+LibriSpeech
+```
+>> egs/librispeech/s5/local/chain/run_multistream_cnn_1a.sh
+```
+|                    | dev-clean  | dev-other  | test-clean | test-other |
+|        :---:       |   :---:    |   :---:    |    :---:   |    :---:   |
+| tdnn_1d            |3.29        |8.71        |3.80        |8.76        |
+| multistream_cnn_1a |3.20        |7.68        |3.54        |7.87        |
+
+Fisher-SWBD
+```
+>> egs/fisher_swbd/s5/local/chain/run_multistream_cnn_1a.sh
+```
+|                    | eval2000   | swbd       | callhm     |
+|        :---:       |   :---:    |:---:       |:---:       | 
+| tdnn_7d            |12.6        |8.8         |16.3        |
+| multistream_cnn_1a |12.6        |9.2         |15.7        |
