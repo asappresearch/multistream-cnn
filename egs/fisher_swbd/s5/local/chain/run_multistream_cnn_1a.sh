@@ -23,7 +23,7 @@ stage=12
 train_stage=-10
 get_egs_stage=-10
 speed_perturb=true
-dir=exp/chain/cnn_tdnnf_multistream_specaug # Note: _sp will get added to this if $speed_perturb == true.
+dir=exp/chain/multistream_cnn_1a # Note: _sp will get added to this if $speed_perturb == true.
 decode_iter=
 decode_dir_affix=
 
@@ -71,6 +71,42 @@ train_set=train_nodup_sp
 build_tree_ali_dir=exp/tri5a_ali
 treedir=exp/chain/tri6_tree
 lang=data/lang_chain
+
+# if we are using the speed-perturbed data we need to generate
+# alignments for it.
+local/nnet3/run_ivector_common.sh --stage $stage \
+  --speed-perturb $speed_perturb \
+  --generate-alignments $speed_perturb || exit 1;
+
+if [ $stage -le 9 ]; then
+  # Get the alignments as lattices (gives the CTC training more freedom).
+  # use the same num-jobs as the alignments
+  nj=$(cat $build_tree_ali_dir/num_jobs) || exit 1;
+  steps/align_fmllr_lats.sh --nj $nj --cmd "$train_cmd" data/$train_set \
+    data/lang exp/tri5a exp/tri5a_lats_nodup$suffix
+  rm exp/tri5a_lats_nodup$suffix/fsts.*.gz # save space
+fi
+
+if [ $stage -le 10 ]; then
+  # Create a version of the lang/ directory that has one state per phone in the
+  # topo file. [note, it really has two states.. the first one is only repeated
+  # once, the second one has zero or more repeats.]
+  rm -rf $lang
+  cp -r data/lang $lang
+  silphonelist=$(cat $lang/phones/silence.csl) || exit 1;
+  nonsilphonelist=$(cat $lang/phones/nonsilence.csl) || exit 1;
+  # Use our special topology... note that later on may have to tune this
+  # topology.
+  steps/nnet3/chain/gen_topo.py $nonsilphonelist $silphonelist >$lang/topo
+fi
+
+if [ $stage -le 11 ]; then
+  # Build a tree using our new topology.
+  steps/nnet3/chain/build_tree.sh --frame-subsampling-factor 3 \
+    --leftmost-questions-truncate $leftmost_questions_truncate \
+    --context-opts "--context-width=2 --central-position=1" \
+    --cmd "$train_cmd" 11000 data/$build_tree_train_set $lang $build_tree_ali_dir $treedir
+fi
 
 if [ $stage -le 12 ]; then
   echo "$0: creating neural net configs using the xconfig parser";
