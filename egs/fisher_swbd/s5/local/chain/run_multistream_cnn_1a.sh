@@ -3,11 +3,15 @@
 # Apache License Version 2.0. The modifications by ASAPP are licensed under
 # the MIT license.
 
-# Copyright 2020 ASAPP Kyu J. Han
+# Copyright 2021 ASAPP Kyu J. Han
 # MIT
 
 # This recipe is based on a paper titled "Multistream CNN for Robust Acoustic Modeling", 
 # https://arxiv.org/abs/2005.10470.
+
+# %WER 15.7 | 2628 21594 | 86.5 9.5 4.0 2.2 15.7 50.8 | exp/chain/multistream_cnn_1a_sp/decode_eval2000_fsh_sw1_fg/score_7_0.0/eval2000_hires.ctm.callhm.filt.sys
+# %WER 12.6 | 4459 42989 | 89.1 7.6 3.4 1.6 12.6 48.8 | exp/chain/multistream_cnn_1a_sp/decode_eval2000_fsh_sw1_fg/score_8_0.0/eval2000_hires.ctm.filt.sys
+# %WER 9.2 | 1831 21395 | 91.8 5.6 2.6 1.1 9.2 44.7 | exp/chain/multistream_cnn_1a_sp/decode_eval2000_fsh_sw1_fg/score_10_0.5/eval2000_hires.ctm.swbd.filt.sys
 
 # Copyright 2017 University of Chinese Academy of Sciences (UCAS) Gaofeng Cheng
 # Apache 2.0
@@ -19,7 +23,7 @@ stage=12
 train_stage=-10
 get_egs_stage=-10
 speed_perturb=true
-dir=exp/chain/mcnn_1a # Note: _sp will get added to this if $speed_perturb == true.
+dir=exp/chain/multistream_cnn_1a # Note: _sp will get added to this if $speed_perturb == true.
 decode_iter=
 decode_dir_affix=
 
@@ -31,7 +35,7 @@ final_effective_lrate=0.0001
 max_param_change=2.0
 num_jobs_initial=8
 num_jobs_final=8
-minibatch_size=128
+minibatch_size=32
 frames_per_eg=150,110,100
 remove_egs=false
 common_egs_dir=
@@ -107,32 +111,39 @@ fi
 if [ $stage -le 12 ]; then
   echo "$0: creating neural net configs using the xconfig parser";
 
-  num_targets=$(tree-info $treedir/tree |grep num-pdfs|awk '{print $2}')
+  num_targets=$(tree-info $treedir/tree | grep num-pdfs | awk '{print $2}')
   learning_rate_factor=$(echo "print (0.5/$xent_regularize)" | python)
   affine_opts="l2-regularize=0.008 dropout-proportion=0.0 dropout-per-dim=true dropout-per-dim-continuous=true"
+  tdnnf_first_opts="l2-regularize=0.008 dropout-proportion=0.0 bypass-scale=0.0"
   tdnnf_opts="l2-regularize=0.008 dropout-proportion=0.0 bypass-scale=0.75"
   linear_opts="l2-regularize=0.008 orthonormal-constraint=-1.0"
   prefinal_opts="l2-regularize=0.008"
   output_opts="l2-regularize=0.002"
+  cnn_opts="l2-regularize=0.01"
+  ivector_affine_opts="l2-regularize=0.0"
+
   mkdir -p $dir/configs
 
   cat <<EOF > $dir/configs/network.xconfig
   input dim=100 name=ivector
   input dim=40 name=input
 
-  # please note that it is important to have input layer with the name=input
-  # as the layer immediately preceding the fixed-affine-layer to enable
-  # the use of short notation for the descriptor
-  fixed-affine-layer name=lda input=Append(-1,0,1,ReplaceIndex(ivector, t, 0)) affine-transform-file=$dir/configs/lda.mat
+  # MFCC to filterbank
+  idct-layer name=idct input=input dim=40 cepstral-lifter=22 affine-transform-file=$dir/configs/idct.mat
 
-  # the first splicing is moved before the lda layer, so no splicing here
-  relu-batchnorm-dropout-layer name=tdnn1 $affine_opts dim=1536
-  tdnnf-layer name=tdnnf2 $tdnnf_opts dim=1536 bottleneck-dim=160 time-stride=1
-  tdnnf-layer name=tdnnf3 $tdnnf_opts dim=1536 bottleneck-dim=160 time-stride=1
-  tdnnf-layer name=tdnnf4 $tdnnf_opts dim=1536 bottleneck-dim=160 time-stride=1
-  tdnnf-layer name=tdnnf5 $tdnnf_opts dim=1536 bottleneck-dim=160 time-stride=0
+  linear-component name=ivector-linear $ivector_affine_opts dim=200 input=ReplaceIndex(ivector, t, 0)
+  batchnorm-component name=ivector-batchnorm target-rms=0.025
+  batchnorm-component name=idct-batchnorm input=idct
 
-  relu-batchnorm-dropout-layer name=tdnn6a $affine_opts input=tdnnf5 dim=512
+  spec-augment-layer name=idct-spec-augment freq-max-proportion=0.5 time-zeroed-proportion=0.2 time-mask-max-frames=20
+  combine-feature-maps-layer name=combine_inputs input=Append(idct-spec-augment, ivector-batchnorm) num-filters1=1 num-filters2=5 height=40
+  conv-relu-batchnorm-layer name=cnn1 $cnn_opts height-in=40 height-out=40 time-offsets=-1,0,1 height-offsets=-1,0,1 num-filters-out=128
+  conv-relu-batchnorm-layer name=cnn2 $cnn_opts height-in=40 height-out=20 height-subsample-out=2 time-offsets=-1,0,1 height-offsets=-1,0,1 num-filters-out=256
+  conv-relu-batchnorm-layer name=cnn3 $cnn_opts height-in=20 height-out=20 time-offsets=-1,0,1 height-offsets=-1,0,1 num-filters-out=256
+  conv-relu-batchnorm-layer name=cnn4 $cnn_opts height-in=20 height-out=10 height-subsample-out=2 time-offsets=-1,0,1 height-offsets=-1,0,1 num-filters-out=256
+  conv-relu-batchnorm-layer name=cnn5 $cnn_opts height-in=10 height-out=10 time-offsets=-1,0,1 height-offsets=-1,0,1 num-filters-out=256
+  
+  relu-batchnorm-dropout-layer name=tdnn6a $affine_opts input=cnn5 dim=512
   tdnnf-layer name=tdnnf7a $tdnnf_opts dim=512 bottleneck-dim=80 time-stride=6
   tdnnf-layer name=tdnnf8a $tdnnf_opts dim=512 bottleneck-dim=80 time-stride=6
   tdnnf-layer name=tdnnf9a $tdnnf_opts dim=512 bottleneck-dim=80 time-stride=6
@@ -151,7 +162,7 @@ if [ $stage -le 12 ]; then
   tdnnf-layer name=tdnnf22a $tdnnf_opts dim=512 bottleneck-dim=80 time-stride=6
   tdnnf-layer name=tdnnf23a $tdnnf_opts dim=512 bottleneck-dim=80 time-stride=6
 
-  relu-batchnorm-dropout-layer name=tdnn6b $affine_opts input=tdnnf5 dim=512
+  relu-batchnorm-dropout-layer name=tdnn6b $affine_opts input=cnn5 dim=512
   tdnnf-layer name=tdnnf7b $tdnnf_opts dim=512 bottleneck-dim=80 time-stride=9
   tdnnf-layer name=tdnnf8b $tdnnf_opts dim=512 bottleneck-dim=80 time-stride=9
   tdnnf-layer name=tdnnf9b $tdnnf_opts dim=512 bottleneck-dim=80 time-stride=9
@@ -170,7 +181,7 @@ if [ $stage -le 12 ]; then
   tdnnf-layer name=tdnnf22b $tdnnf_opts dim=512 bottleneck-dim=80 time-stride=9
   tdnnf-layer name=tdnnf23b $tdnnf_opts dim=512 bottleneck-dim=80 time-stride=9
 
-  relu-batchnorm-dropout-layer name=tdnn6c $affine_opts input=tdnnf5 dim=512
+  relu-batchnorm-dropout-layer name=tdnn6c $affine_opts input=cnn5 dim=512
   tdnnf-layer name=tdnnf7c $tdnnf_opts dim=512 bottleneck-dim=80 time-stride=12
   tdnnf-layer name=tdnnf8c $tdnnf_opts dim=512 bottleneck-dim=80 time-stride=12
   tdnnf-layer name=tdnnf9c $tdnnf_opts dim=512 bottleneck-dim=80 time-stride=12
