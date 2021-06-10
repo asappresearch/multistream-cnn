@@ -260,40 +260,47 @@ if [ $stage -le 15 ]; then
   if [ ! -z $decode_iter ]; then
     iter_opts=" --iter $decode_iter "
   fi
-  for decode_set in eval2000; do
-      steps/nnet3/decode.sh --acwt 1.0 --post-decode-acwt 10.0 \
-          --nj 50 --cmd "$decode_cmd" $iter_opts \
-          --online-ivector-dir exp/nnet3/ivectors_${decode_set} \
-         $graph_dir data/${decode_set}_hires \
-         $dir/decode_${decode_set}${decode_dir_affix:+_$decode_dir_affix}_${decode_suff} || exit 1;
-      steps/lmrescore_const_arpa.sh --cmd "$decode_cmd" \
-            data/lang_fsh_sw1_{tg,fg} data/${decode_set}_hires \
-            $dir/decode_${decode_set}${decode_dir_affix:+_$decode_dir_affix}_fsh_sw1_{tg,fg} || exit 1;
+  for decode_set in rt03 eval2000; do
+    (
+    steps/nnet3/decode.sh --acwt 1.0 --post-decode-acwt 10.0 \
+      --nj 50 --cmd "$decode_cmd" $iter_opts \
+      --online-ivector-dir exp/nnet3/ivectors_${decode_set} \
+      $graph_dir data/${decode_set}_hires \
+      $dir/decode_${decode_set}${decode_dir_affix:+_$decode_dir_affix}_${decode_suff} || exit 1;
+    steps/lmrescore_const_arpa.sh --cmd "$decode_cmd" \
+      data/lang_fsh_sw1_{tg,fg} data/${decode_set}_hires \
+      $dir/decode_${decode_set}${decode_dir_affix:+_$decode_dir_affix}_fsh_sw1_{tg,fg} || exit 1;
+    ) || touch $dir/.error &
   done
+  wait
+  if [ -f $dir/.error ]; then
+    echo "$0: something went wrong in decoding"
+    exit 1
+  fi
 fi
 
-test_online_decoding=false
+test_online_decoding=true
 lang=data/lang_fsh_sw1_tg
 if $test_online_decoding && [ $stage -le 16 ]; then
   # note: if the features change (e.g. you add pitch features), you will have to
   # change the options of the following command line.
   steps/online/nnet3/prepare_online_decoding.sh \
-       --mfcc-config conf/mfcc_hires.conf \
-       $lang exp/nnet3/extractor $dir ${dir}_online
+    --mfcc-config conf/mfcc_hires.conf \
+    $lang exp/nnet3/extractor $dir ${dir}_online
 
   rm $dir/.error 2>/dev/null || true
   for decode_set in rt03 eval2000; do
     (
-      # note: we just give it "$decode_set" as it only uses the wav.scp, the
-      # feature type does not matter.
+    # note: we just give it "$decode_set" as it only uses the wav.scp, the
+    # feature type does not matter.
 
-      steps/online/nnet3/decode.sh --nj 50 --cmd "$decode_cmd" $iter_opts \
-          --acwt 1.0 --post-decode-acwt 10.0 \
-         $graph_dir data/${decode_set}_hires \
-         ${dir}_online/decode_${decode_set}${decode_iter:+_$decode_iter}_${decode_suff} || exit 1;
-	    steps/lmrescore_const_arpa.sh --cmd "$decode_cmd" \
-		      data/lang_fsh_sw1_{tg,fg} data/${decode_set}_hires \
-		      ${dir}_online/decode_${decode_set}${decode_dir_affix:+_$decode_dir_affix}_fsh_sw1_{tg,fg} || exit 1;
+    steps/online/nnet3/decode.sh --nj 50 --cmd "$decode_cmd" $iter_opts \
+      --acwt 1.0 --post-decode-acwt 10.0 \
+      $graph_dir data/${decode_set}_hires \
+      ${dir}_online/decode_${decode_set}${decode_iter:+_$decode_iter}_${decode_suff} || exit 1;
+    steps/lmrescore_const_arpa.sh --cmd "$decode_cmd" \
+      data/lang_fsh_sw1_{tg,fg} data/${decode_set}_hires \
+      ${dir}_online/decode_${decode_set}${decode_dir_affix:+_$decode_dir_affix}_fsh_sw1_{tg,fg} || exit 1;
     ) || touch $dir/.error &
   done
   wait
