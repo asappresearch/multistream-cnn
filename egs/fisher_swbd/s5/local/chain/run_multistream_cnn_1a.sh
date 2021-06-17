@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# This file has been modified by ASAPP. The original file is licensed under the 
-# Apache License Version 2.0. The modifications by ASAPP are licensed under
-# the MIT license.
 
-# Copyright 2021 ASAPP Kyu J. Han
-# MIT
+# Copyright 2021 ASAPP (author: Kyu J. Han)
+# MIT License
 
 # This recipe is based on a paper titled "Multistream CNN for Robust Acoustic Modeling", 
 # https://arxiv.org/abs/2005.10470.
